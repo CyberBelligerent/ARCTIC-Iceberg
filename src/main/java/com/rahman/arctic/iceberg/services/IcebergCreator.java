@@ -132,6 +132,8 @@ public class IcebergCreator extends Thread {
 		while(!queue.isEmpty()) {
 			executorService.execute(queue.poll());
 		}
+		
+		tasksToComplete.clear();
 	}
 	
 }
