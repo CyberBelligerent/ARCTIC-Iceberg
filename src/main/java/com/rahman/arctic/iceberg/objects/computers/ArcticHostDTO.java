@@ -22,6 +22,8 @@ public class ArcticHostDTO {
 	private int size;
 	private String imageId;
 	private String flavorId;
+	private String imageName;
+	private String flavorName;
 	private Set<String> networks = new HashSet<>();
 	private Set<String> volumes = new HashSet<>();
 }

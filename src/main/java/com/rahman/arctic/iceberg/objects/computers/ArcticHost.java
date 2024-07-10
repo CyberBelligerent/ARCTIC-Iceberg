@@ -20,7 +20,9 @@ public class ArcticHost {
 	private int count = 1;
 	private String name;
 	private int size;
+	private String imageName;
 	private String imageId;
+	private String flavorName;
 	private String flavorId;
 	private boolean built = false;
 	private boolean errorState = false;
