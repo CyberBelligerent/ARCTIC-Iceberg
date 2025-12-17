@@ -19,11 +19,14 @@ public class ArcticHostDTO {
 	private int count = 1;
 	private int mapId;
 	private String name;
-	private int size;
+	private String defaultUser;
+	private String defaultPassword;
 	private String imageId;
 	private String flavorId;
 	private String imageName;
 	private String flavorName;
+	private String osType;
+	private Set<String> wantedIPs = new HashSet<>();
 	private Set<String> networks = new HashSet<>();
 	private Set<String> volumes = new HashSet<>();
 }
