@@ -17,6 +17,7 @@ import com.rahman.arctic.iceberg.objects.computers.ArcticSecurityGroup;
 import com.rahman.arctic.iceberg.objects.computers.ArcticSecurityGroupRule;
 import com.rahman.arctic.iceberg.objects.computers.ArcticVolume;
 import com.rahman.arctic.shard.ShardManager;
+import com.rahman.arctic.shard.configuration.persistence.ShardProfile;
 import com.rahman.arctic.shard.objects.ArcticTask;
 import com.rahman.arctic.shard.objects.abstraction.ArcticHostSO;
 import com.rahman.arctic.shard.objects.abstraction.ArcticNetworkSO;
@@ -36,6 +37,7 @@ public class IcebergCreator extends Thread {
 	private ExecutorService executorService = Executors.newFixedThreadPool(5);
 	
 	@Getter @Setter
+	public ShardProfile profile;
 	
 	@Getter
 	private List<ArcticTask<?, ?>> tasksToComplete = new ArrayList<>();
@@ -44,6 +46,8 @@ public class IcebergCreator extends Thread {
 		sm = shardManager;
 	}
 	
+	public void attemptCreation() {
+		sm.createSession(profile);
 	}
 	
 	public void createHost(ArcticHost ah) {
@@ -60,7 +64,7 @@ public class IcebergCreator extends Thread {
 		ahso.setDefaultPassword(ah.getDefaultPassword());
 		ahso.setWantedIPs(ah.getWantedIPs());
 		
-		provider.createHost(ahso);
+		sm.getSession(profile).createHost(ahso);
 	}
 	
 	public void createNetwork(ArcticNetwork an) {
@@ -72,7 +76,7 @@ public class IcebergCreator extends Thread {
 		anso.setIpRangeStart(an.getNetStart());
 		anso.setRangeId(an.getRangeId());
 		
-		provider.createNetwork(anso);
+		sm.getSession(profile).createNetwork(anso);
 	}
 	
 	public void createSecurityGroup(ArcticSecurityGroup asg) {
@@ -81,7 +85,7 @@ public class IcebergCreator extends Thread {
 		asgso.setName(asg.getName());
 		asgso.setRangeId(asg.getRangeId());
 		
-		provider.createSecurityGroup(asgso);
+		sm.getSession(profile).createSecurityGroup(asgso);
 	}
 	
 	public void createSecurityGroupRule(ArcticSecurityGroupRule asgr) {
@@ -96,7 +100,7 @@ public class IcebergCreator extends Thread {
 		asgrso.setSecGroup(asgr.getSecGroup());
 		asgrso.setStartPortRange(asgr.getStartPortRange());
 		
-		provider.createSecurityGroupRule(asgrso);
+		sm.getSession(profile).createSecurityGroupRule(asgrso);
 	}
 	
 	public void createRouter(ArcticRouter ar) {
@@ -105,7 +109,7 @@ public class IcebergCreator extends Thread {
 		arso.setName(ar.getName());
 		arso.setRangeId(ar.getRangeId());
 		
-		provider.createRouter(arso);
+		sm.getSession(profile).createRouter(arso);
 	}
 	
 	public void createVolume(ArcticVolume av) {
@@ -117,16 +121,17 @@ public class IcebergCreator extends Thread {
 		avso.setRangeId(av.getRangeId());
 		avso.setSize(av.getSize());
 		
-		provider.createVolume(avso);
+		sm.getSession(profile).createVolume(avso);
 	}
 	
+	// TODO: Needs to be fixed with user profiles and who is doing this
 	public void run() {
-		tasksToComplete.addAll(provider.getInstanceTasks().values());
-		tasksToComplete.addAll(provider.getNetworkTasks().values());
-		tasksToComplete.addAll(provider.getRouterTasks().values());
-		tasksToComplete.addAll(provider.getSecurityGroupRuleTasks().values());
-		tasksToComplete.addAll(provider.getSecurityGroupTasks().values());
-		tasksToComplete.addAll(provider.getVolumeTasks().values());
+		tasksToComplete.addAll(sm.getSession(profile).getInstanceTasks().values());
+		tasksToComplete.addAll(sm.getSession(profile).getNetworkTasks().values());
+		tasksToComplete.addAll(sm.getSession(profile).getRouterTasks().values());
+		tasksToComplete.addAll(sm.getSession(profile).getSecurityGroupRuleTasks().values());
+		tasksToComplete.addAll(sm.getSession(profile).getSecurityGroupTasks().values());
+		tasksToComplete.addAll(sm.getSession(profile).getVolumeTasks().values());
 		
 		PriorityQueue<ArcticTask<?, ?>> queue = new PriorityQueue<ArcticTask<?, ?>>(tasksToComplete.size(), new Comparator<ArcticTask<?, ?>>() {
 			@Override
