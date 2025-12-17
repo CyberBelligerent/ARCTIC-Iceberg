@@ -19,15 +19,20 @@ public class ArcticHost {
 	private int mapId;
 	private int count = 1;
 	private String name;
-	private int size;
+	private String defaultUser;
+	private String defaultPassword;
 	private String imageName;
 	private String imageId;
 	private String flavorName;
 	private String flavorId;
+	private String osType;
 	private boolean built = false;
 	private boolean errorState = false;
 	private String ip;
 	private String rangeId;
+	
+	@ElementCollection
+	private Set<String> wantedIPs = new HashSet<>();
 	
 	@ElementCollection
 	private Set<String> networks = new HashSet<>();
