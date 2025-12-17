@@ -17,14 +17,13 @@ import com.rahman.arctic.iceberg.objects.computers.ArcticSecurityGroup;
 import com.rahman.arctic.iceberg.objects.computers.ArcticSecurityGroupRule;
 import com.rahman.arctic.iceberg.objects.computers.ArcticVolume;
 import com.rahman.arctic.shard.ShardManager;
-import com.rahman.arctic.shard.objects.ArcticHostSO;
-import com.rahman.arctic.shard.objects.ArcticNetworkSO;
-import com.rahman.arctic.shard.objects.ArcticRouterSO;
-import com.rahman.arctic.shard.objects.ArcticSecurityGroupRuleSO;
-import com.rahman.arctic.shard.objects.ArcticSecurityGroupSO;
 import com.rahman.arctic.shard.objects.ArcticTask;
-import com.rahman.arctic.shard.objects.ArcticVolumeSO;
-import com.rahman.arctic.shard.shards.ShardProviderTmpl;
+import com.rahman.arctic.shard.objects.abstraction.ArcticHostSO;
+import com.rahman.arctic.shard.objects.abstraction.ArcticNetworkSO;
+import com.rahman.arctic.shard.objects.abstraction.ArcticRouterSO;
+import com.rahman.arctic.shard.objects.abstraction.ArcticSecurityGroupRuleSO;
+import com.rahman.arctic.shard.objects.abstraction.ArcticSecurityGroupSO;
+import com.rahman.arctic.shard.objects.abstraction.ArcticVolumeSO;
 
 import lombok.Getter;
 import lombok.Setter;
@@ -51,10 +50,15 @@ public class IcebergCreator extends Thread {
 		ArcticHostSO ahso = new ArcticHostSO();
 		ahso.setName(ah.getName());
 		ahso.setIp(ah.getIp());
+		ahso.setImageId(ah.getImageId());
 		ahso.setFlavor(ah.getFlavorId());
 		ahso.setRangeId(ah.getRangeId());
 		ahso.setVolumes(ah.getVolumes());
 		ahso.setNetworks(ah.getNetworks());
+		ahso.setOsType(ah.getOsType());
+		ahso.setDefaultUser(ah.getDefaultUser());
+		ahso.setDefaultPassword(ah.getDefaultPassword());
+		ahso.setWantedIPs(ah.getWantedIPs());
 		
 		provider.createHost(ahso);
 	}
