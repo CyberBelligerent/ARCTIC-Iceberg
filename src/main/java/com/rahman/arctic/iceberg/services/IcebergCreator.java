@@ -32,20 +32,19 @@ import lombok.Setter;
 @Component
 @Scope("prototype")
 public class IcebergCreator extends Thread {
-
-	@Autowired
-	private ShardManager shardManager;
 	
+	private final ShardManager sm;
 	private ExecutorService executorService = Executors.newFixedThreadPool(5);
 	
 	@Getter @Setter
+	
 	@Getter
 	private List<ArcticTask<?, ?>> tasksToComplete = new ArrayList<>();
 	
-	private final ShardProviderTmpl<?> provider;
+	public IcebergCreator(ShardManager shardManager) {
+		sm = shardManager;
+	}
 	
-	public IcebergCreator() {
-		provider = shardManager.getPrimaryShard();
 	}
 	
 	public void createHost(ArcticHost ah) {
