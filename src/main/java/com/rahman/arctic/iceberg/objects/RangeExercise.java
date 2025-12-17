@@ -2,7 +2,6 @@ package com.rahman.arctic.iceberg.objects;
 
 import java.util.HashSet;
 import java.util.Set;
-import java.util.UUID;
 
 import com.rahman.arctic.iceberg.objects.computers.ArcticHost;
 import com.rahman.arctic.iceberg.objects.computers.ArcticNetwork;
@@ -15,6 +14,8 @@ import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Lob;
@@ -34,6 +35,7 @@ public class RangeExercise {
 	
 	@Id
 	@Column(name = "exercise_id")
+	@GeneratedValue(strategy = GenerationType.UUID)
 	private String id;
 	
 	@Lob
@@ -73,10 +75,6 @@ public class RangeExercise {
 	
 	@ElementCollection
 	private Set<String> tags = new HashSet<>();
-	
-	public RangeExercise() {
-		id = UUID.randomUUID().toString();
-	}
 	
 	public boolean doesAttackStepsContainId(String id) {
 		AttackStepRef asr = attackSteps.stream().filter((e) -> e.getAttackStepId() == id).findFirst().orElse(null);
