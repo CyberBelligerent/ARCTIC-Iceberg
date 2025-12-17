@@ -7,7 +7,8 @@ import java.util.PriorityQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Scope;
+import org.springframework.stereotype.Component;
 
 import com.rahman.arctic.iceberg.objects.computers.ArcticHost;
 import com.rahman.arctic.iceberg.objects.computers.ArcticNetwork;
@@ -26,15 +27,18 @@ import com.rahman.arctic.shard.objects.ArcticVolumeSO;
 import com.rahman.arctic.shard.shards.ShardProviderTmpl;
 
 import lombok.Getter;
+import lombok.Setter;
 
+@Component
+@Scope("prototype")
 public class IcebergCreator extends Thread {
 
 	@Autowired
 	private ShardManager shardManager;
 	
-	@Autowired
 	private ExecutorService executorService = Executors.newFixedThreadPool(5);
 	
+	@Getter @Setter
 	@Getter
 	private List<ArcticTask<?, ?>> tasksToComplete = new ArrayList<>();
 	
