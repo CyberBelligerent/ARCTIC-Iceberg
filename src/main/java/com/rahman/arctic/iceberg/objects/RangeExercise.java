@@ -7,7 +7,6 @@ import com.rahman.arctic.iceberg.objects.computers.ArcticHost;
 import com.rahman.arctic.iceberg.objects.computers.ArcticNetwork;
 import com.rahman.arctic.iceberg.objects.computers.ArcticRouter;
 import com.rahman.arctic.iceberg.objects.computers.ArcticVolume;
-import com.rahman.arctic.polarbear.objects.AttackStepRef;
 
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -21,7 +20,6 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Lob;
 import jakarta.persistence.OneToMany;
 import lombok.Data;
-import lombok.EqualsAndHashCode;
 
 /**
  * Stores network information, reports, and teams to help gamify the exercise/ranges
@@ -30,7 +28,6 @@ import lombok.EqualsAndHashCode;
  */
 @Entity
 @Data
-@EqualsAndHashCode(exclude = { /*"teams",*/"networks", "hosts", "volumes", "attackSteps"})
 public class RangeExercise {
 	
 	@Id
@@ -42,10 +39,10 @@ public class RangeExercise {
 	private String description;
 	
 	private String name;
-	private String projectId;
 	private RangeType type;
+	private String providerName;
 	
-	private int concurrentRanges;
+//	private int concurrentRanges;
 	
 	/**
 	 * All teams assigned to this Range
@@ -70,15 +67,15 @@ public class RangeExercise {
 	@JoinColumn(name = "exercise_id")
 	private Set<ArcticRouter> routers = new HashSet<>();
 	
-	@ElementCollection
-	private Set<AttackStepRef> attackSteps = new HashSet<>();
+//	@ElementCollection
+//	private Set<AttackStepRef> attackSteps = new HashSet<>();
 	
 	@ElementCollection
 	private Set<String> tags = new HashSet<>();
 	
-	public boolean doesAttackStepsContainId(String id) {
-		AttackStepRef asr = attackSteps.stream().filter((e) -> e.getAttackStepId() == id).findFirst().orElse(null);
-		return (asr != null);
-	}
+//	public boolean doesAttackStepsContainId(String id) {
+//		AttackStepRef asr = attackSteps.stream().filter((e) -> e.getAttackStepId() == id).findFirst().orElse(null);
+//		return (asr != null);
+//	}
 	
 }

@@ -1,7 +1,5 @@
 package com.rahman.arctic.iceberg.objects;
 
-import java.util.List;
-
 import lombok.Data;
 
 /**
@@ -13,7 +11,8 @@ import lombok.Data;
 public class RangeDTO {
 	private String rangeName;
 	private String rangeDescription;
-	private String rangeType;
-	private int concurrentRanges;
-	private List<String> tags;	
+	private String providerName;
+//	private String rangeType;
+//	private int concurrentRanges;
+//	private List<String> tags;	
 }
