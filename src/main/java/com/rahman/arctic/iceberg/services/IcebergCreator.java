@@ -54,15 +54,17 @@ public class IcebergCreator extends Thread {
 		ArcticHostSO ahso = new ArcticHostSO();
 		ahso.setName(ah.getName());
 		ahso.setIp(ah.getIp());
-		ahso.setImageId(ah.getImageId());
-		ahso.setFlavor(ah.getFlavorId());
+//		ahso.setImageId(ah.getImageId());
+//		ahso.setFlavor(ah.getFlavorId());
 		ahso.setRangeId(ah.getRangeId());
 		ahso.setVolumes(ah.getVolumes());
 		ahso.setNetworks(ah.getNetworks());
 		ahso.setOsType(ah.getOsType());
-		ahso.setDefaultUser(ah.getDefaultUser());
-		ahso.setDefaultPassword(ah.getDefaultPassword());
-		ahso.setWantedIPs(ah.getWantedIPs());
+//		ahso.setDefaultUser(ah.getDefaultUser());
+//		ahso.setDefaultPassword(ah.getDefaultPassword());
+//		ahso.setWantedIPs(ah.getWantedIPs());
+		
+		ahso.setExtraVariables(ah.getExtraVariables());
 		
 		sm.getSession(profile).createHost(ahso);
 	}

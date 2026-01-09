@@ -1,11 +1,14 @@
 package com.rahman.arctic.iceberg.objects.computers;
 
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 
 import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import lombok.Data;
 
@@ -14,25 +17,26 @@ import lombok.Data;
 public class ArcticHost {
 
 	@Id
+	@GeneratedValue(strategy = GenerationType.UUID)
 	private String id;
 	
 	private int mapId;
 	private int count = 1;
 	private String name;
-	private String defaultUser;
-	private String defaultPassword;
-	private String imageName;
-	private String imageId;
-	private String flavorName;
-	private String flavorId;
+//	private String defaultUser;
+//	private String defaultPassword;
+//	private String imageName;
+//	private String imageId;
+//	private String flavorName;
+//	private String flavorId;
 	private String osType;
 	private boolean built = false;
 	private boolean errorState = false;
 	private String ip;
 	private String rangeId;
 	
-	@ElementCollection
-	private Set<String> wantedIPs = new HashSet<>();
+//	@ElementCollection
+//	private Set<String> wantedIPs = new HashSet<>();
 	
 	@ElementCollection
 	private Set<String> networks = new HashSet<>();
@@ -40,8 +44,7 @@ public class ArcticHost {
 	@ElementCollection
 	private Set<String> volumes = new HashSet<>();
 	
-	public ArcticHost() {
-		id = UUID.randomUUID().toString();
-	}
+	@ElementCollection
+	private Map<String, String> extraVariables = new HashMap<>();
 	
 }
