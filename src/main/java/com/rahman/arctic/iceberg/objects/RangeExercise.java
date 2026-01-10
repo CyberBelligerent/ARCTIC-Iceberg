@@ -42,6 +42,14 @@ public class RangeExercise {
 	private RangeType type;
 	private String providerName;
 	
+	@Lob
+	@Column(name = "graph_nodes", columnDefinition = "LONGTEXT")
+	private String graphNodes;
+
+	@Lob
+	@Column(name = "graph_links", columnDefinition = "LONGTEXT")
+	private String graphLinks;
+	
 //	private int concurrentRanges;
 	
 	/**
