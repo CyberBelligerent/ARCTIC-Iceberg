@@ -21,6 +21,7 @@ public class ArcticRouter {
 	private boolean built = false;
 	private boolean errorState = false;
 	private String rangeId;
+	private String providerId;
 	
 	@ElementCollection
 	private Set<String> networks = new HashSet<>();

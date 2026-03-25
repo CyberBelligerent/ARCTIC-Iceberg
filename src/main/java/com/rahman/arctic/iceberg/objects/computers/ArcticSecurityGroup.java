@@ -16,6 +16,7 @@ public class ArcticSecurityGroup {
 	private String name;
 	private String rangeId;
 	private String description;
+	private String providerId;
 	
 	public ArcticSecurityGroup() {
 		id = UUID.randomUUID().toString();

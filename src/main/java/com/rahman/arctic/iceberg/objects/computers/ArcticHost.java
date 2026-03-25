@@ -34,6 +34,7 @@ public class ArcticHost {
 	private boolean errorState = false;
 	private String ip;
 	private String rangeId;
+	private String providerId;
 	
 //	@ElementCollection
 //	private Set<String> wantedIPs = new HashSet<>();

@@ -27,6 +27,7 @@ public class ArcticNetwork {
 	private boolean built = false;
 	private boolean errorState = false;
 	private String rangeId;
+	private String providerId;
 	
 	public ArcticNetwork() {
 		id = UUID.randomUUID().toString();

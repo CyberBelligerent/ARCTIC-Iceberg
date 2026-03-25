@@ -22,6 +22,7 @@ public class ArcticSecurityGroupRule {
 	private String protocol;
 	private String eth;
 	private String rangeId;
+	private String providerId;
 	
 	public ArcticSecurityGroupRule() {
 		id = UUID.randomUUID().toString();
