@@ -16,6 +16,11 @@ import com.rahman.arctic.iceberg.objects.computers.ArcticRouter;
 import com.rahman.arctic.iceberg.objects.computers.ArcticSecurityGroup;
 import com.rahman.arctic.iceberg.objects.computers.ArcticSecurityGroupRule;
 import com.rahman.arctic.iceberg.objects.computers.ArcticVolume;
+import com.rahman.arctic.iceberg.repos.ArcticHostRepo;
+import com.rahman.arctic.iceberg.repos.ArcticNetworkRepo;
+import com.rahman.arctic.iceberg.repos.ArcticRouterRepo;
+import com.rahman.arctic.iceberg.repos.ArcticSecurityGroupRepo;
+import com.rahman.arctic.iceberg.repos.ArcticVolumeRepo;
 import com.rahman.arctic.shard.ShardManager;
 import com.rahman.arctic.shard.configuration.persistence.ShardProfile;
 import com.rahman.arctic.shard.objects.ArcticTask;
@@ -34,6 +39,11 @@ import lombok.Setter;
 public class IcebergCreator extends Thread {
 	
 	private final ShardManager sm;
+	private final ArcticNetworkRepo networkRepo;
+	private final ArcticHostRepo hostRepo;
+	private final ArcticRouterRepo routerRepo;
+	private final ArcticSecurityGroupRepo securityGroupRepo;
+	private final ArcticVolumeRepo volumeRepo;
 	private ExecutorService executorService = Executors.newFixedThreadPool(5);
 	
 	@Getter @Setter
@@ -45,8 +55,14 @@ public class IcebergCreator extends Thread {
 	@Getter
 	private List<ArcticTask<?, ?>> tasksToComplete = new ArrayList<>();
 	
-	public IcebergCreator(ShardManager shardManager) {
+	public IcebergCreator(ShardManager shardManager, ArcticNetworkRepo networkRepo, ArcticHostRepo hostRepo,
+			ArcticRouterRepo routerRepo, ArcticSecurityGroupRepo securityGroupRepo, ArcticVolumeRepo volumeRepo) {
 		sm = shardManager;
+		this.networkRepo = networkRepo;
+		this.hostRepo = hostRepo;
+		this.routerRepo = routerRepo;
+		this.securityGroupRepo = securityGroupRepo;
+		this.volumeRepo = volumeRepo;
 	}
 	
 	public void attemptCreation() {
@@ -66,10 +82,17 @@ public class IcebergCreator extends Thread {
 //		ahso.setDefaultUser(ah.getDefaultUser());
 //		ahso.setDefaultPassword(ah.getDefaultPassword());
 //		ahso.setWantedIPs(ah.getWantedIPs());
-		
+
 		ahso.setExtraVariables(ah.getExtraVariables());
-		
+
 		sm.getSession(profile).createHost(ahso);
+
+		ArcticTask<?, ?> task = sm.getSession(profile).getInstanceTasks().get(ah.getName());
+		if (task != null) task.setOnPersist(r -> {
+			ah.setProviderId(ahso.getProviderId());
+			ah.setBuilt(true);
+			hostRepo.save(ah);
+		});
 	}
 	
 	public void createNetwork(ArcticNetwork an) {
@@ -80,8 +103,16 @@ public class IcebergCreator extends Thread {
 		anso.setIpRangeEnd(an.getNetEnd());
 		anso.setIpRangeStart(an.getNetStart());
 		anso.setRangeId(an.getRangeId());
-		
+		anso.setExtraVariables(an.getExtraVariables());
+
 		sm.getSession(profile).createNetwork(anso);
+
+		ArcticTask<?, ?> task = sm.getSession(profile).getNetworkTasks().get(an.getNetName());
+		if (task != null) task.setOnPersist(r -> {
+			an.setProviderId(anso.getProviderId());
+			an.setBuilt(true);
+			networkRepo.save(an);
+		});
 	}
 	
 	public void createSecurityGroup(ArcticSecurityGroup asg) {
@@ -91,6 +122,12 @@ public class IcebergCreator extends Thread {
 		asgso.setRangeId(asg.getRangeId());
 		
 		sm.getSession(profile).createSecurityGroup(asgso);
+
+		ArcticTask<?, ?> task = sm.getSession(profile).getSecurityGroupTasks().get(asg.getName());
+		if (task != null) task.setOnPersist(r -> {
+			asg.setProviderId(asgso.getProviderId());
+			securityGroupRepo.save(asg);
+		});
 	}
 	
 	public void createSecurityGroupRule(ArcticSecurityGroupRule asgr) {
@@ -113,8 +150,16 @@ public class IcebergCreator extends Thread {
 		arso.setConnectedNetworkNames(ar.getNetworks());
 		arso.setName(ar.getName());
 		arso.setRangeId(ar.getRangeId());
-		
+		arso.setExtraVariables(ar.getExtraVariables());
+
 		sm.getSession(profile).createRouter(arso);
+
+		ArcticTask<?, ?> task = sm.getSession(profile).getRouterTasks().get(ar.getName());
+		if (task != null) task.setOnPersist(r -> {
+			ar.setProviderId(arso.getProviderId());
+			ar.setBuilt(true);
+			routerRepo.save(ar);
+		});
 	}
 	
 	public void createVolume(ArcticVolume av) {
@@ -127,6 +172,13 @@ public class IcebergCreator extends Thread {
 		avso.setSize(av.getSize());
 
 		sm.getSession(profile).createVolume(avso);
+
+		ArcticTask<?, ?> task = sm.getSession(profile).getVolumeTasks().get(av.getName());
+		if (task != null) task.setOnPersist(r -> {
+			av.setProviderId(avso.getProviderId());
+			av.setBuilt(true);
+			volumeRepo.save(av);
+		});
 	}
 
 	public void destroyHost(ArcticHost ah) {
@@ -152,6 +204,7 @@ public class IcebergCreator extends Thread {
 		anso.setIpRangeStart(an.getNetStart());
 		anso.setRangeId(an.getRangeId());
 		anso.setProviderId(an.getProviderId());
+		anso.setExtraVariables(an.getExtraVariables());
 
 		sm.getSession(profile).destroyNetwork(anso);
 	}
@@ -188,6 +241,7 @@ public class IcebergCreator extends Thread {
 		arso.setName(ar.getName());
 		arso.setRangeId(ar.getRangeId());
 		arso.setProviderId(ar.getProviderId());
+		arso.setExtraVariables(ar.getExtraVariables());
 
 		sm.getSession(profile).destroyRouter(arso);
 	}

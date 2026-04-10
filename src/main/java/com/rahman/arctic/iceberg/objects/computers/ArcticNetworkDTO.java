@@ -1,5 +1,8 @@
 package com.rahman.arctic.iceberg.objects.computers;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -19,4 +22,5 @@ public class ArcticNetworkDTO {
 	private String end;
 	private String cidr;
 	private String gateway;
+	private Map<String, String> extraVariables = new HashMap<>();
 }

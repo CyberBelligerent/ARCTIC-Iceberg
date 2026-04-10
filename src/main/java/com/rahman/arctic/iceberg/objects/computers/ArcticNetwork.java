@@ -1,9 +1,15 @@
 package com.rahman.arctic.iceberg.objects.computers;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 
+import jakarta.persistence.CollectionTable;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.MapKeyColumn;
 import lombok.Data;
 
 /**
@@ -28,6 +34,11 @@ public class ArcticNetwork {
 	private boolean errorState = false;
 	private String rangeId;
 	private String providerId;
+
+	@ElementCollection
+	@CollectionTable(name = "arctic_network_extra_variables", joinColumns = @JoinColumn(name = "network_id"))
+	@MapKeyColumn(name = "var_key")
+	private Map<String, String> extraVariables = new HashMap<>();
 	
 	public ArcticNetwork() {
 		id = UUID.randomUUID().toString();
