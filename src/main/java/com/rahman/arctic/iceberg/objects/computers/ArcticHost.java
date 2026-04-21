@@ -5,11 +5,18 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
+import com.rahman.arctic.iceberg.ansible.HostInlineScript;
+import com.rahman.arctic.iceberg.ansible.HostRoleAssignment;
+
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.OneToMany;
 import lombok.Data;
 
 @Entity
@@ -47,5 +54,13 @@ public class ArcticHost {
 	
 	@ElementCollection
 	private Map<String, String> extraVariables = new HashMap<>();
-	
+
+	@OneToMany(cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = true)
+	@JoinColumn(name = "host_id")
+	private Set<HostRoleAssignment> roleAssignments = new HashSet<>();
+
+	@OneToMany(cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = true)
+	@JoinColumn(name = "host_id")
+	private Set<HostInlineScript> inlineScripts = new HashSet<>();
+
 }
