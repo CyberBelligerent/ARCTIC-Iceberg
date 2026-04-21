@@ -77,7 +77,20 @@ public class IcebergCreator extends Thread {
 //		ahso.setFlavor(ah.getFlavorId());
 		ahso.setRangeId(ah.getRangeId());
 		ahso.setVolumes(ah.getVolumes());
-		ahso.setNetworks(ah.getNetworks());
+		java.util.Set<String> resolvedNetNames = new java.util.HashSet<>();
+		System.out.println("[createHost] '" + ah.getName() + "' ah.getNetworks()=" + ah.getNetworks()
+				+ "  repoCount=" + networkRepo.count());
+		for (String netId : ah.getNetworks()) {
+			java.util.Optional<com.rahman.arctic.iceberg.objects.computers.ArcticNetwork> found = networkRepo.findById(netId);
+			System.out.println("[createHost]   findById('" + netId + "') → "
+					+ (found.isPresent() ? "netName=" + found.get().getNetName() : "EMPTY"));
+			found.ifPresentOrElse(
+				n -> resolvedNetNames.add(n.getNetName()),
+				() -> resolvedNetNames.add(netId)
+			);
+		}
+		System.out.println("[createHost] '" + ah.getName() + "' resolvedNetNames=" + resolvedNetNames);
+		ahso.setNetworks(resolvedNetNames);
 		ahso.setOsType(ah.getOsType());
 //		ahso.setDefaultUser(ah.getDefaultUser());
 //		ahso.setDefaultPassword(ah.getDefaultPassword());
@@ -147,7 +160,20 @@ public class IcebergCreator extends Thread {
 	
 	public void createRouter(ArcticRouter ar) {
 		ArcticRouterSO arso = new ArcticRouterSO();
-		arso.setConnectedNetworkNames(ar.getNetworks());
+		java.util.Set<String> resolvedNetNames = new java.util.HashSet<>();
+		System.out.println("[createRouter] '" + ar.getName() + "' ar.getNetworks()=" + ar.getNetworks()
+				+ "  repoCount=" + networkRepo.count());
+		for (String netId : ar.getNetworks()) {
+			java.util.Optional<ArcticNetwork> found = networkRepo.findById(netId);
+			System.out.println("[createRouter]   findById('" + netId + "') → "
+					+ (found.isPresent() ? "netName=" + found.get().getNetName() : "EMPTY"));
+			found.ifPresentOrElse(
+				n -> resolvedNetNames.add(n.getNetName()),
+				() -> resolvedNetNames.add(netId)
+			);
+		}
+		System.out.println("[createRouter] '" + ar.getName() + "' resolvedNetNames=" + resolvedNetNames);
+		arso.setConnectedNetworkNames(resolvedNetNames);
 		arso.setName(ar.getName());
 		arso.setRangeId(ar.getRangeId());
 		arso.setExtraVariables(ar.getExtraVariables());
