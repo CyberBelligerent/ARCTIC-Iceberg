@@ -6,10 +6,13 @@ import java.util.List;
 import java.util.PriorityQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import org.springframework.context.annotation.Scope;
 import org.springframework.stereotype.Component;
 
+import com.rahman.arctic.iceberg.ansible.AnsibleStager;
+import com.rahman.arctic.iceberg.objects.RangeExercise;
 import com.rahman.arctic.iceberg.objects.computers.ArcticHost;
 import com.rahman.arctic.iceberg.objects.computers.ArcticNetwork;
 import com.rahman.arctic.iceberg.objects.computers.ArcticRouter;
@@ -21,6 +24,7 @@ import com.rahman.arctic.iceberg.repos.ArcticNetworkRepo;
 import com.rahman.arctic.iceberg.repos.ArcticRouterRepo;
 import com.rahman.arctic.iceberg.repos.ArcticSecurityGroupRepo;
 import com.rahman.arctic.iceberg.repos.ArcticVolumeRepo;
+import com.rahman.arctic.iceberg.repos.ExerciseRepo;
 import com.rahman.arctic.shard.ShardManager;
 import com.rahman.arctic.shard.configuration.persistence.ShardProfile;
 import com.rahman.arctic.shard.objects.ArcticTask;
@@ -44,25 +48,40 @@ public class IcebergCreator extends Thread {
 	private final ArcticRouterRepo routerRepo;
 	private final ArcticSecurityGroupRepo securityGroupRepo;
 	private final ArcticVolumeRepo volumeRepo;
+	private final ExerciseRepo exerciseRepo;
+	private final AnsibleStager ansibleStager;
 	private ExecutorService executorService = Executors.newFixedThreadPool(5);
-	
+
 	@Getter @Setter
 	public ShardProfile profile;
 
 	@Getter @Setter
 	private boolean destroyMode = false;
 
+	@Getter @Setter
+	private RangeExercise exercise;
+
+	// Must be set for Ansible Controllers buildHost function wrapped in the wait()
+	@Getter
+	private volatile String controllerIp;
+
+	// Hostname used for the per-range Ansible controller
+	private String controllerName;
+
 	@Getter
 	private List<ArcticTask<?, ?>> tasksToComplete = new ArrayList<>();
-	
+
 	public IcebergCreator(ShardManager shardManager, ArcticNetworkRepo networkRepo, ArcticHostRepo hostRepo,
-			ArcticRouterRepo routerRepo, ArcticSecurityGroupRepo securityGroupRepo, ArcticVolumeRepo volumeRepo) {
+			ArcticRouterRepo routerRepo, ArcticSecurityGroupRepo securityGroupRepo, ArcticVolumeRepo volumeRepo,
+			ExerciseRepo exerciseRepo, AnsibleStager ansibleStager) {
 		sm = shardManager;
 		this.networkRepo = networkRepo;
 		this.hostRepo = hostRepo;
 		this.routerRepo = routerRepo;
 		this.securityGroupRepo = securityGroupRepo;
 		this.volumeRepo = volumeRepo;
+		this.exerciseRepo = exerciseRepo;
+		this.ansibleStager = ansibleStager;
 	}
 	
 	public void attemptCreation() {
@@ -103,11 +122,48 @@ public class IcebergCreator extends Thread {
 		ArcticTask<?, ?> task = sm.getSession(profile).getInstanceTasks().get(ah.getName());
 		if (task != null) task.setOnPersist(r -> {
 			ah.setProviderId(ahso.getProviderId());
+			ah.setIp(ahso.getIp());
 			ah.setBuilt(true);
 			hostRepo.save(ah);
 		});
 	}
-	
+
+	// Creates a per-range Ansible Controller
+	public void createAnsibleController(RangeExercise ex) {
+		if (ex == null) return;
+		controllerName = "arctic-controller-" + ex.getName();
+
+		ArcticHostSO ahso = new ArcticHostSO();
+		ahso.setName(controllerName);
+		ahso.setRangeId(ex.getId());
+		ahso.setPriorityOverride(5);
+		java.util.Set<String> netNames = new java.util.HashSet<>();
+		for (ArcticNetwork n : ex.getNetworks()) {
+			if (n.getNetName() != null && !n.getNetName().isBlank()) netNames.add(n.getNetName());
+		}
+		ahso.setNetworks(netNames);
+
+		java.util.Map<String, String> vars = new java.util.HashMap<>();
+		vars.put("vm_template_name", "ARCTICAnsibleController");
+		
+		// Create provider_network (Really just a measure to ensure some standardization)
+		// this is supplied for the MAAS installation of ARCTIC.
+		// TODO: Either put this in docs it needs to be made or make it configurable...
+		vars.put("provider_network_names", "provider_network");
+		ahso.setExtraVariables(vars);
+
+		sm.getSession(profile).createHost(ahso);
+
+		ArcticTask<?, ?> task = sm.getSession(profile).getInstanceTasks().get(controllerName);
+		if (task != null) task.setOnPersist(r -> {
+			controllerIp = ahso.getIp();
+			ex.setControllerProviderId(ahso.getProviderId());
+			exerciseRepo.save(ex);
+			System.out.println("[IcebergCreator] Ansible controller IP=" + controllerIp
+					+ " providerId=" + ahso.getProviderId());
+		});
+	}
+
 	public void createNetwork(ArcticNetwork an) {
 		ArcticNetworkSO anso = new ArcticNetworkSO();
 		anso.setName(an.getNetName());
@@ -221,6 +277,34 @@ public class IcebergCreator extends Thread {
 		sm.getSession(profile).destroyHost(ahso);
 	}
 
+	// Tears down the Ansible Controller
+	public void destroyAnsibleController(RangeExercise ex) {
+		if (ex == null) return;
+		String providerId = ex.getControllerProviderId();
+		if (providerId == null || providerId.isBlank()) {
+			System.out.println("[IcebergCreator] no controllerProviderId on exercise '"
+					+ ex.getName() + "' — skipping controller destroy");
+			return;
+		}
+
+		String name = "arctic-controller-" + ex.getName();
+		ArcticHostSO ahso = new ArcticHostSO();
+		ahso.setName(name);
+		ahso.setRangeId(ex.getId());
+		ahso.setProviderId(providerId);
+		ahso.setDestroyPriorityOverride(3);
+
+		sm.getSession(profile).destroyHost(ahso);
+
+		ArcticTask<?, ?> task = sm.getSession(profile).getDestroyInstanceTasks().get(name);
+		if (task != null) task.setOnPersist(r -> {
+			ex.setControllerProviderId(null);
+			exerciseRepo.save(ex);
+			System.out.println("[IcebergCreator] controller destroyed + providerId cleared for '"
+					+ ex.getName() + "'");
+		});
+	}
+
 	public void destroyNetwork(ArcticNetwork an) {
 		ArcticNetworkSO anso = new ArcticNetworkSO();
 		anso.setName(an.getNetName());
@@ -315,7 +399,21 @@ public class IcebergCreator extends Thread {
 			executorService.execute(queue.poll());
 		}
 
+		executorService.shutdown();
+		try {
+			if (!executorService.awaitTermination(1, TimeUnit.HOURS)) {
+				System.err.println("[IcebergCreator] task executor did not terminate within 1h");
+			}
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+		}
+
 		tasksToComplete.clear();
+
+		if (!destroyMode && exercise != null) {
+			ansibleStager.stage(exercise);
+			ansibleStager.pushAndRun(controllerIp, exercise.getName());
+		}
 	}
 	
 }
