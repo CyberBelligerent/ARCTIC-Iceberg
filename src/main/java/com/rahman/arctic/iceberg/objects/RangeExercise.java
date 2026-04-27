@@ -41,6 +41,9 @@ public class RangeExercise {
 	private String name;
 	private RangeType type;
 	private String providerName;
+
+	// name or ID of the ansible controller set by IcebergCreator.createAnsibleController
+	private String controllerProviderId;
 	
 	@Lob
 	@Column(name = "graph_nodes", columnDefinition = "LONGTEXT")
