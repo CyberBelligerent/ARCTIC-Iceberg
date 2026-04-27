@@ -4,6 +4,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
@@ -38,6 +39,7 @@ public class ArcticNetwork {
 	@ElementCollection
 	@CollectionTable(name = "arctic_network_extra_variables", joinColumns = @JoinColumn(name = "network_id"))
 	@MapKeyColumn(name = "var_key")
+	@Column(length = 4096)
 	private Map<String, String> extraVariables = new HashMap<>();
 	
 	public ArcticNetwork() {

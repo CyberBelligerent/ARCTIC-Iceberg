@@ -9,6 +9,7 @@ import com.rahman.arctic.iceberg.ansible.HostInlineScript;
 import com.rahman.arctic.iceberg.ansible.HostRoleAssignment;
 
 import jakarta.persistence.CascadeType;
+import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -53,6 +54,7 @@ public class ArcticHost {
 	private Set<String> volumes = new HashSet<>();
 	
 	@ElementCollection
+	@Column(length = 4096)
 	private Map<String, String> extraVariables = new HashMap<>();
 
 	@OneToMany(cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = true)
