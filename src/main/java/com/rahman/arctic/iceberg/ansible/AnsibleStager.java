@@ -20,7 +20,9 @@ import org.springframework.stereotype.Service;
 
 import com.rahman.arctic.iceberg.objects.RangeExercise;
 import com.rahman.arctic.iceberg.objects.computers.ArcticHost;
+import com.rahman.arctic.iceberg.objects.computers.HostCollection;
 import com.rahman.arctic.iceberg.repos.AnsibleRoleRepo;
+import com.rahman.arctic.shard.util.ARCTICLog;
 
 @Service
 public class AnsibleStager {
@@ -58,12 +60,12 @@ public class AnsibleStager {
 
 			writeInventory(exDir, exercise);
 			writeRoles(exDir, exercise);
-			writeHostPlaybooks(exDir, exercise);
+			writeCollectionPlaybooks(exDir, exercise);
 			writeSiteYml(exDir, exercise);
 			writeAnsibleCfg(exDir);
-			System.out.println("[AnsibleStager] staged " + exDir.toAbsolutePath());
+			ARCTICLog.print("AnsibleStager", "staged " + exDir.toAbsolutePath());
 		} catch (IOException e) {
-			System.err.println("[AnsibleStager] failed to stage '" + exercise.getName() + "': " + e.getMessage());
+			ARCTICLog.err("AnsibleStager", "failed to stage '" + exercise.getName() + "': " + e.getMessage());
 			e.printStackTrace();
 		}
 	}
@@ -73,27 +75,27 @@ public class AnsibleStager {
 		Path exDir = OUTPUT_ROOT.resolve(sanitize(exerciseName));
 		try {
 			wipe(exDir);
-			System.out.println("[AnsibleStager] cleaned " + exDir.toAbsolutePath());
+			ARCTICLog.print("AnsibleStager", "cleaned " + exDir.toAbsolutePath());
 		} catch (IOException e) {
-			System.err.println("[AnsibleStager] failed to clean '" + exerciseName + "': " + e.getMessage());
+			ARCTICLog.err("AnsibleStager", "failed to clean '" + exerciseName + "': " + e.getMessage());
 		}
 	}
 
 	// SCP the required files to the Ansible Controller
 	public void pushAndRun(String controllerIp, String exerciseName) {
 		if (controllerIp == null || controllerIp.isBlank()) {
-			System.err.println("[AnsibleStager] pushAndRun skipped — no controller IP");
+			ARCTICLog.err("AnsibleStager", "pushAndRun skipped — no controller IP");
 			return;
 		}
 		if (exerciseName == null || exerciseName.isBlank()) {
-			System.err.println("[AnsibleStager] pushAndRun skipped — no exercise name");
+			ARCTICLog.err("AnsibleStager", "pushAndRun skipped — no exercise name");
 			return;
 		}
 
 		String folderName = sanitize(exerciseName);
 		Path exDir = OUTPUT_ROOT.resolve(folderName);
 		if (!Files.exists(exDir)) {
-			System.err.println("[AnsibleStager] pushAndRun skipped — " + exDir.toAbsolutePath() + " missing");
+			ARCTICLog.err("AnsibleStager", "pushAndRun skipped — " + exDir.toAbsolutePath() + " missing");
 			return;
 		}
 
@@ -102,7 +104,7 @@ public class AnsibleStager {
 		String userAtHost = controllerUser + "@" + controllerIp;
 
 		if (!waitForSshReady(controllerIp, 22, 300, 3)) {
-			System.err.println("[AnsibleStager] pushAndRun skipped — " + controllerIp
+			ARCTICLog.err("AnsibleStager", "pushAndRun skipped — " + controllerIp
 					+ ":22 never became reachable");
 			return;
 		}
@@ -134,10 +136,10 @@ public class AnsibleStager {
 					userAtHost,
 					"cd " + remoteExPath + " && ansible-playbook -i inventory.ini site.yml"));
 
-			System.out.println("[AnsibleStager] pushAndRun complete for '" + exerciseName + "' @ " + controllerIp);
+			ARCTICLog.print("AnsibleStager", "pushAndRun complete for '" + exerciseName + "' @ " + controllerIp);
 		} catch (IOException | InterruptedException e) {
 			if (e instanceof InterruptedException) Thread.currentThread().interrupt();
-			System.err.println("[AnsibleStager] pushAndRun failed for '" + exerciseName + "': " + e.getMessage());
+			ARCTICLog.err("AnsibleStager", "pushAndRun failed for '" + exerciseName + "': " + e.getMessage());
 		}
 	}
 
@@ -152,13 +154,13 @@ public class AnsibleStager {
 				s.connect(new java.net.InetSocketAddress(host, port), 3000);
 				streak++;
 				if (streak >= requiredStreak) {
-					System.out.println("[AnsibleStager] " + host + ":" + port + " ready after "
+					ARCTICLog.print("AnsibleStager", host + ":" + port + " ready after "
 							+ attempt + " attempt(s), streak=" + streak);
 					return true;
 				}
 			} catch (IOException e) {
 				if (streak > 0) {
-					System.out.println("[AnsibleStager] " + host + ":" + port
+					ARCTICLog.print("AnsibleStager", host + ":" + port
 							+ " probe failed mid-streak (had " + streak + "), resetting");
 				}
 				streak = 0;
@@ -178,7 +180,7 @@ public class AnsibleStager {
 		Process p = pb.start();
 		try (java.io.BufferedReader r = new java.io.BufferedReader(new java.io.InputStreamReader(p.getInputStream()))) {
 			String line;
-			while ((line = r.readLine()) != null) System.out.println(tag + " " + line);
+			while ((line = r.readLine()) != null) ARCTICLog.print(tag, line);
 		}
 		int exit = p.waitFor();
 		if (exit != 0) {
@@ -192,26 +194,31 @@ public class AnsibleStager {
 		sb.append("ansible_user=").append(controllerUser).append("\n");
 		sb.append("ansible_ssh_private_key_file=").append(rangeKeyPath).append("\n");
 		sb.append("ansible_ssh_common_args=-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null\n");
-		sb.append("\n[all]\n");
-		for (ArcticHost host : sortedHosts(exercise)) {
-			String ip = host.getIp();
-			if (ip == null || ip.isBlank()) {
-				sb.append("# ").append(host.getName()).append(" — no IP resolved at build time\n");
-				continue;
+		sb.append("\n");
+
+		for (HostCollection hc : sortedCollections(exercise)) {
+			sb.append("[").append(sanitize(hc.getName())).append("]\n");
+			for (ArcticHost instance : sortedInstances(hc)) {
+				String ip = instance.getIp();
+				if (ip == null || ip.isBlank()) {
+					sb.append("# ").append(instance.getName()).append(" — no IP resolved at build time\n");
+					continue;
+				}
+				sb.append(instance.getName()).append(" ansible_host=").append(ip).append("\n");
 			}
-			sb.append(host.getName()).append(" ansible_host=").append(ip).append("\n");
+			sb.append("\n");
 		}
 		Files.writeString(exDir.resolve("inventory.ini"), sb.toString());
 	}
 
 	private void writeRoles(Path exDir, RangeExercise exercise) throws IOException {
 		Set<String> seen = new HashSet<>();
-		for (ArcticHost host : exercise.getHosts()) {
-			for (HostRoleAssignment a : host.getRoleAssignments()) {
+		for (HostCollection hc : exercise.getHostCollections()) {
+			for (HostRoleAssignment a : hc.getRoleAssignments()) {
 				if (!seen.add(a.getRoleId())) continue;
 				Optional<AnsibleRole> opt = roleRepo.findById(a.getRoleId());
 				if (opt.isEmpty()) {
-					System.err.println("[AnsibleStager] role id=" + a.getRoleId() + " not found — skipping");
+					ARCTICLog.err("AnsibleStager", "role id=" + a.getRoleId() + " not found — skipping");
 					continue;
 				}
 				AnsibleRole role = opt.get();
@@ -222,23 +229,31 @@ public class AnsibleStager {
 		}
 	}
 
-	private void writeHostPlaybooks(Path exDir, RangeExercise exercise) throws IOException {
+	private void writeCollectionPlaybooks(Path exDir, RangeExercise exercise) throws IOException {
 		Map<String, String> roleIdToName = roleNameCache();
-		for (ArcticHost host : exercise.getHosts()) {
+		for (HostCollection hc : exercise.getHostCollections()) {
 			List<OrderedEntry> entries = new ArrayList<>();
-			for (HostRoleAssignment a : host.getRoleAssignments()) {
+			for (HostRoleAssignment a : hc.getRoleAssignments()) {
 				String roleName = roleIdToName.get(a.getRoleId());
 				if (roleName == null) continue;
 				entries.add(OrderedEntry.forRole(a.getRunOrder(), roleName, a.getOverrideVariables()));
 			}
-			for (HostInlineScript s : host.getInlineScripts()) {
+			for (HostInlineScript s : hc.getInlineScripts()) {
 				entries.add(OrderedEntry.forScript(s.getRunOrder(), s.getName(), s.getContent()));
 			}
 			entries.sort(Comparator.comparingInt(e -> e.runOrder));
 
 			StringBuilder sb = new StringBuilder();
-			sb.append("- hosts: ").append(host.getName()).append("\n");
+			sb.append("- hosts: ").append(sanitize(hc.getName())).append("\n");
 			sb.append("  become: true\n");
+			sb.append("  gather_facts: false\n");
+			sb.append("  pre_tasks:\n");
+			sb.append("    - name: wait for host to become reachable\n");
+			sb.append("      ansible.builtin.wait_for_connection:\n");
+			sb.append("        delay: 5\n");
+			sb.append("        timeout: 600\n");
+			sb.append("    - name: gather facts after host is reachable\n");
+			sb.append("      ansible.builtin.setup:\n");
 			if (entries.isEmpty()) {
 				sb.append("  tasks: []\n");
 			} else {
@@ -247,7 +262,7 @@ public class AnsibleStager {
 					sb.append(e.toYaml());
 				}
 			}
-			Files.writeString(exDir.resolve("playbooks").resolve(sanitize(host.getName()) + ".yml"), sb.toString());
+			Files.writeString(exDir.resolve("playbooks").resolve(sanitize(hc.getName()) + ".yml"), sb.toString());
 		}
 	}
 
@@ -261,8 +276,8 @@ public class AnsibleStager {
 
 	private void writeSiteYml(Path exDir, RangeExercise exercise) throws IOException {
 		StringBuilder sb = new StringBuilder();
-		for (ArcticHost host : sortedHosts(exercise)) {
-			sb.append("- import_playbook: playbooks/").append(sanitize(host.getName())).append(".yml\n");
+		for (HostCollection hc : sortedCollections(exercise)) {
+			sb.append("- import_playbook: playbooks/").append(sanitize(hc.getName())).append(".yml\n");
 		}
 		Files.writeString(exDir.resolve("site.yml"), sb.toString());
 	}
@@ -273,9 +288,16 @@ public class AnsibleStager {
 		return map;
 	}
 
-	private List<ArcticHost> sortedHosts(RangeExercise exercise) {
-		List<ArcticHost> list = new ArrayList<>(exercise.getHosts());
-		list.sort(Comparator.comparing(ArcticHost::getName));
+	private List<HostCollection> sortedCollections(RangeExercise exercise) {
+		List<HostCollection> list = new ArrayList<>(exercise.getHostCollections());
+		list.sort(Comparator.comparing(HostCollection::getName));
+		return list;
+	}
+
+	private List<ArcticHost> sortedInstances(HostCollection hc) {
+		List<ArcticHost> list = new ArrayList<>(hc.getInstances());
+		list.sort(Comparator.comparingInt(ArcticHost::getInstanceIndex)
+				.thenComparing(ArcticHost::getName));
 		return list;
 	}
 
