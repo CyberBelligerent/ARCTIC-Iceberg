@@ -3,10 +3,10 @@ package com.rahman.arctic.iceberg.objects;
 import java.util.HashSet;
 import java.util.Set;
 
-import com.rahman.arctic.iceberg.objects.computers.ArcticHost;
 import com.rahman.arctic.iceberg.objects.computers.ArcticNetwork;
 import com.rahman.arctic.iceberg.objects.computers.ArcticRouter;
 import com.rahman.arctic.iceberg.objects.computers.ArcticVolume;
+import com.rahman.arctic.iceberg.objects.computers.HostCollection;
 
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -68,7 +68,7 @@ public class RangeExercise {
 	
 	@OneToMany(cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = true)
 	@JoinColumn(name = "exercise_id")
-	private Set<ArcticHost> hosts = new HashSet<>();
+	private Set<HostCollection> hostCollections = new HashSet<>();
 	
 	@OneToMany(cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = true)
 	@JoinColumn(name = "exercise_id")

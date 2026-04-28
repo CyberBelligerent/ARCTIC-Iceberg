@@ -19,12 +19,14 @@ import com.rahman.arctic.iceberg.objects.computers.ArcticRouter;
 import com.rahman.arctic.iceberg.objects.computers.ArcticSecurityGroup;
 import com.rahman.arctic.iceberg.objects.computers.ArcticSecurityGroupRule;
 import com.rahman.arctic.iceberg.objects.computers.ArcticVolume;
+import com.rahman.arctic.iceberg.objects.computers.HostCollection;
 import com.rahman.arctic.iceberg.repos.ArcticHostRepo;
 import com.rahman.arctic.iceberg.repos.ArcticNetworkRepo;
 import com.rahman.arctic.iceberg.repos.ArcticRouterRepo;
 import com.rahman.arctic.iceberg.repos.ArcticSecurityGroupRepo;
 import com.rahman.arctic.iceberg.repos.ArcticVolumeRepo;
 import com.rahman.arctic.iceberg.repos.ExerciseRepo;
+import com.rahman.arctic.iceberg.repos.HostCollectionRepo;
 import com.rahman.arctic.shard.ShardManager;
 import com.rahman.arctic.shard.configuration.persistence.ShardProfile;
 import com.rahman.arctic.shard.objects.ArcticTask;
@@ -34,6 +36,8 @@ import com.rahman.arctic.shard.objects.abstraction.ArcticRouterSO;
 import com.rahman.arctic.shard.objects.abstraction.ArcticSecurityGroupRuleSO;
 import com.rahman.arctic.shard.objects.abstraction.ArcticSecurityGroupSO;
 import com.rahman.arctic.shard.objects.abstraction.ArcticVolumeSO;
+import com.rahman.arctic.shard.util.ARCTICLog;
+import com.rahman.arctic.shard.util.IpUtil;
 
 import lombok.Getter;
 import lombok.Setter;
@@ -49,6 +53,7 @@ public class IcebergCreator extends Thread {
 	private final ArcticSecurityGroupRepo securityGroupRepo;
 	private final ArcticVolumeRepo volumeRepo;
 	private final ExerciseRepo exerciseRepo;
+	private final HostCollectionRepo collectionRepo;
 	private final AnsibleStager ansibleStager;
 	private ExecutorService executorService = Executors.newFixedThreadPool(5);
 
@@ -60,6 +65,9 @@ public class IcebergCreator extends Thread {
 
 	@Getter @Setter
 	private RangeExercise exercise;
+
+	@Getter @Setter
+	private String deploymentId;
 
 	// Must be set for Ansible Controllers buildHost function wrapped in the wait()
 	@Getter
@@ -73,7 +81,7 @@ public class IcebergCreator extends Thread {
 
 	public IcebergCreator(ShardManager shardManager, ArcticNetworkRepo networkRepo, ArcticHostRepo hostRepo,
 			ArcticRouterRepo routerRepo, ArcticSecurityGroupRepo securityGroupRepo, ArcticVolumeRepo volumeRepo,
-			ExerciseRepo exerciseRepo, AnsibleStager ansibleStager) {
+			ExerciseRepo exerciseRepo, HostCollectionRepo collectionRepo, AnsibleStager ansibleStager) {
 		sm = shardManager;
 		this.networkRepo = networkRepo;
 		this.hostRepo = hostRepo;
@@ -81,6 +89,7 @@ public class IcebergCreator extends Thread {
 		this.securityGroupRepo = securityGroupRepo;
 		this.volumeRepo = volumeRepo;
 		this.exerciseRepo = exerciseRepo;
+		this.collectionRepo = collectionRepo;
 		this.ansibleStager = ansibleStager;
 	}
 	
@@ -88,45 +97,109 @@ public class IcebergCreator extends Thread {
 		sm.createSession(profile);
 	}
 	
-	public void createHost(ArcticHost ah) {
+	public void createHostCollection(HostCollection hc) {
+		validateIpBoundsForCollection(hc);
+
 		ArcticHostSO ahso = new ArcticHostSO();
-		ahso.setName(ah.getName());
-		ahso.setIp(ah.getIp());
-//		ahso.setImageId(ah.getImageId());
-//		ahso.setFlavor(ah.getFlavorId());
-		ahso.setRangeId(ah.getRangeId());
-		ahso.setVolumes(ah.getVolumes());
+		ahso.setName(hc.getName());
+		ahso.setRangeId(hc.getRangeId());
+		ahso.setOsType(hc.getOsType());
+		ahso.setVolumes(new java.util.HashSet<>(hc.getVolumes()));
+		ahso.setCount(Math.max(1, hc.getCount()));
+		ahso.setCollectionId(hc.getId());
+		ahso.setExtraVariables(new java.util.HashMap<>(hc.getExtraVariables()));
+
 		java.util.Set<String> resolvedNetNames = new java.util.HashSet<>();
-		System.out.println("[createHost] '" + ah.getName() + "' ah.getNetworks()=" + ah.getNetworks()
-				+ "  repoCount=" + networkRepo.count());
-		for (String netId : ah.getNetworks()) {
-			java.util.Optional<com.rahman.arctic.iceberg.objects.computers.ArcticNetwork> found = networkRepo.findById(netId);
-			System.out.println("[createHost]   findById('" + netId + "') → "
-					+ (found.isPresent() ? "netName=" + found.get().getNetName() : "EMPTY"));
+		for (String netId : hc.getNetworks()) {
+			java.util.Optional<ArcticNetwork> found = networkRepo.findById(netId);
 			found.ifPresentOrElse(
 				n -> resolvedNetNames.add(n.getNetName()),
 				() -> resolvedNetNames.add(netId)
 			);
 		}
-		System.out.println("[createHost] '" + ah.getName() + "' resolvedNetNames=" + resolvedNetNames);
 		ahso.setNetworks(resolvedNetNames);
-		ahso.setOsType(ah.getOsType());
-//		ahso.setDefaultUser(ah.getDefaultUser());
-//		ahso.setDefaultPassword(ah.getDefaultPassword());
-//		ahso.setWantedIPs(ah.getWantedIPs());
 
-		ahso.setExtraVariables(ah.getExtraVariables());
+		java.util.List<ArcticHostSO> instanceSos = sm.getSession(profile).createHostCollection(ahso);
 
-		sm.getSession(profile).createHost(ahso);
+		// Wipe stale instance rows so a redeploy doesn't accumulate ghosts.
+		hc.getInstances().clear();
+		collectionRepo.save(hc);
 
-		ArcticTask<?, ?> task = sm.getSession(profile).getInstanceTasks().get(ah.getName());
-		if (task != null) task.setOnPersist(r -> {
-			ah.setProviderId(ahso.getProviderId());
-			ah.setIp(ahso.getIp());
-			ah.setBuilt(true);
-			hostRepo.save(ah);
-		});
+		for (int i = 0; i < instanceSos.size(); i++) {
+			final int instanceIndex = i;
+			final ArcticHostSO instanceSo = instanceSos.get(i);
+			ArcticTask<?, ?> task = sm.getSession(profile).getInstanceTasks().get(instanceSo.getName());
+			if (task == null) continue;
+			task.setOnPersist(r -> {
+				ArcticHost instance = new ArcticHost();
+				instance.setCollectionId(hc.getId());
+				instance.setRangeId(hc.getRangeId());
+				instance.setInstanceIndex(instanceIndex);
+				instance.setName(instanceSo.getName());
+				instance.setIp(instanceSo.getIp());
+				instance.setProviderId(instanceSo.getProviderId());
+				instance.setBuilt(true);
+				// Fan-out workers all complete on different pool threads and persist into the
+				// same shared hc reference. The merge cascade iterates hc.instances while
+				// another thread is mutating it → ConcurrentModificationException. Serialize.
+				synchronized (hc) {
+					hostRepo.save(instance);
+					hc.getInstances().add(instance);
+					collectionRepo.save(hc);
+				}
+			});
+		}
 	}
+
+	/**
+	 * For each entry in `network_ips`, verify start+(count-1) lies within the matching
+	 * ArcticNetwork's CIDR. External networks (not in range.getNetworks()) are skipped + warned.
+	 * Hard-fails by throwing IllegalArgumentException.
+	 */
+	private void validateIpBoundsForCollection(HostCollection hc) {
+		int count = Math.max(1, hc.getCount());
+		if (count == 1) return;
+
+		String raw = hc.getExtraVariables().get("network_ips");
+		if (raw == null || raw.isBlank()) return;
+
+		java.util.Map<String, ArcticNetwork> netByName = new java.util.HashMap<>();
+		if (exercise != null) {
+			for (ArcticNetwork n : exercise.getNetworks()) {
+				if (n.getNetName() != null) netByName.put(n.getNetName(), n);
+			}
+		}
+
+		for (String line : raw.split("\n")) {
+			String trimmed = line.trim();
+			if (trimmed.isEmpty()) continue;
+			int eq = trimmed.indexOf('=');
+			if (eq <= 0) continue;
+			String netName = trimmed.substring(0, eq).trim();
+			String startIp = trimmed.substring(eq + 1).trim();
+
+			ArcticNetwork managed = netByName.get(netName);
+			if (managed == null || managed.getNetCidr() == null || managed.getNetCidr().isBlank()) {
+				ARCTICLog.print("IcebergCreator", "WARN: network '" + netName
+						+ "' is external (no CIDR). Skipping bounds check for collection '"
+						+ hc.getName() + "'.");
+				continue;
+			}
+
+			String lastIp;
+			try {
+				lastIp = IpUtil.increment(startIp, count - 1);
+			} catch (IllegalArgumentException e) {
+				throw new IllegalArgumentException("[" + hc.getName() + "] invalid start IP '"
+						+ startIp + "' for network '" + netName + "'", e);
+			}
+			if (!IpUtil.isInCidr(startIp, managed.getNetCidr()) || !IpUtil.isInCidr(lastIp, managed.getNetCidr()))
+				throw new IllegalArgumentException("[" + hc.getName() + "] IP range "
+						+ startIp + "→" + lastIp + " escapes CIDR " + managed.getNetCidr()
+						+ " on network '" + netName + "'");
+		}
+	}
+
 
 	// Creates a per-range Ansible Controller
 	public void createAnsibleController(RangeExercise ex) {
@@ -136,7 +209,9 @@ public class IcebergCreator extends Thread {
 		ArcticHostSO ahso = new ArcticHostSO();
 		ahso.setName(controllerName);
 		ahso.setRangeId(ex.getId());
-		ahso.setPriorityOverride(5);
+		// Build after host instances so explicit fan-out IPs are claimed first;
+		// the controller takes whatever address IPAM has left.
+		ahso.setPriorityOverride(20);
 		java.util.Set<String> netNames = new java.util.HashSet<>();
 		for (ArcticNetwork n : ex.getNetworks()) {
 			if (n.getNetName() != null && !n.getNetName().isBlank()) netNames.add(n.getNetName());
@@ -159,7 +234,7 @@ public class IcebergCreator extends Thread {
 			controllerIp = ahso.getIp();
 			ex.setControllerProviderId(ahso.getProviderId());
 			exerciseRepo.save(ex);
-			System.out.println("[IcebergCreator] Ansible controller IP=" + controllerIp
+			ARCTICLog.print("IcebergCreator", "Ansible controller IP=" + controllerIp
 					+ " providerId=" + ahso.getProviderId());
 		});
 	}
@@ -217,18 +292,18 @@ public class IcebergCreator extends Thread {
 	public void createRouter(ArcticRouter ar) {
 		ArcticRouterSO arso = new ArcticRouterSO();
 		java.util.Set<String> resolvedNetNames = new java.util.HashSet<>();
-		System.out.println("[createRouter] '" + ar.getName() + "' ar.getNetworks()=" + ar.getNetworks()
+		ARCTICLog.print("createRouter", "'" + ar.getName() + "' ar.getNetworks()=" + ar.getNetworks()
 				+ "  repoCount=" + networkRepo.count());
 		for (String netId : ar.getNetworks()) {
 			java.util.Optional<ArcticNetwork> found = networkRepo.findById(netId);
-			System.out.println("[createRouter]   findById('" + netId + "') → "
+			ARCTICLog.print("createRouter", "  findById('" + netId + "') → "
 					+ (found.isPresent() ? "netName=" + found.get().getNetName() : "EMPTY"));
 			found.ifPresentOrElse(
 				n -> resolvedNetNames.add(n.getNetName()),
 				() -> resolvedNetNames.add(netId)
 			);
 		}
-		System.out.println("[createRouter] '" + ar.getName() + "' resolvedNetNames=" + resolvedNetNames);
+		ARCTICLog.print("createRouter", "'" + ar.getName() + "' resolvedNetNames=" + resolvedNetNames);
 		arso.setConnectedNetworkNames(resolvedNetNames);
 		arso.setName(ar.getName());
 		arso.setRangeId(ar.getRangeId());
@@ -263,18 +338,29 @@ public class IcebergCreator extends Thread {
 		});
 	}
 
-	public void destroyHost(ArcticHost ah) {
-		ArcticHostSO ahso = new ArcticHostSO();
-		ahso.setName(ah.getName());
-		ahso.setIp(ah.getIp());
-		ahso.setRangeId(ah.getRangeId());
-		ahso.setVolumes(ah.getVolumes());
-		ahso.setNetworks(ah.getNetworks());
-		ahso.setOsType(ah.getOsType());
-		ahso.setExtraVariables(ah.getExtraVariables());
-		ahso.setProviderId(ah.getProviderId());
+	public void destroyHostCollection(HostCollection hc) {
+		java.util.Set<String> resolvedNetNames = new java.util.HashSet<>();
+		for (String netId : hc.getNetworks()) {
+			networkRepo.findById(netId).ifPresentOrElse(
+				n -> resolvedNetNames.add(n.getNetName()),
+				() -> resolvedNetNames.add(netId)
+			);
+		}
 
-		sm.getSession(profile).destroyHost(ahso);
+		for (ArcticHost instance : hc.getInstances()) {
+			ArcticHostSO ahso = new ArcticHostSO();
+			ahso.setName(instance.getName());
+			ahso.setIp(instance.getIp());
+			ahso.setRangeId(instance.getRangeId());
+			ahso.setProviderId(instance.getProviderId());
+			ahso.setOsType(hc.getOsType());
+			ahso.setNetworks(new java.util.HashSet<>(resolvedNetNames));
+			ahso.setVolumes(new java.util.HashSet<>(hc.getVolumes()));
+			ahso.setExtraVariables(new java.util.HashMap<>(hc.getExtraVariables()));
+			ahso.setCollectionId(hc.getId());
+
+			sm.getSession(profile).destroyHost(ahso);
+		}
 	}
 
 	// Tears down the Ansible Controller
@@ -282,7 +368,7 @@ public class IcebergCreator extends Thread {
 		if (ex == null) return;
 		String providerId = ex.getControllerProviderId();
 		if (providerId == null || providerId.isBlank()) {
-			System.out.println("[IcebergCreator] no controllerProviderId on exercise '"
+			ARCTICLog.print("IcebergCreator", "no controllerProviderId on exercise '"
 					+ ex.getName() + "' — skipping controller destroy");
 			return;
 		}
@@ -300,7 +386,7 @@ public class IcebergCreator extends Thread {
 		if (task != null) task.setOnPersist(r -> {
 			ex.setControllerProviderId(null);
 			exerciseRepo.save(ex);
-			System.out.println("[IcebergCreator] controller destroyed + providerId cleared for '"
+			ARCTICLog.print("IcebergCreator", "controller destroyed + providerId cleared for '"
 					+ ex.getName() + "'");
 		});
 	}
@@ -371,48 +457,53 @@ public class IcebergCreator extends Thread {
 
 	// TODO: Needs to be fixed with user profiles and who is doing this
 	public void run() {
-		if (destroyMode) {
-			tasksToComplete.addAll(sm.getSession(profile).getDestroyInstanceTasks().values());
-			tasksToComplete.addAll(sm.getSession(profile).getDestroyNetworkTasks().values());
-			tasksToComplete.addAll(sm.getSession(profile).getDestroyRouterTasks().values());
-			tasksToComplete.addAll(sm.getSession(profile).getDestroySecurityGroupRuleTasks().values());
-			tasksToComplete.addAll(sm.getSession(profile).getDestroySecurityGroupTasks().values());
-			tasksToComplete.addAll(sm.getSession(profile).getDestroyVolumeTasks().values());
-		} else {
-			tasksToComplete.addAll(sm.getSession(profile).getInstanceTasks().values());
-			tasksToComplete.addAll(sm.getSession(profile).getNetworkTasks().values());
-			tasksToComplete.addAll(sm.getSession(profile).getRouterTasks().values());
-			tasksToComplete.addAll(sm.getSession(profile).getSecurityGroupRuleTasks().values());
-			tasksToComplete.addAll(sm.getSession(profile).getSecurityGroupTasks().values());
-			tasksToComplete.addAll(sm.getSession(profile).getVolumeTasks().values());
-		}
-
-		PriorityQueue<ArcticTask<?, ?>> queue = new PriorityQueue<ArcticTask<?, ?>>(tasksToComplete.size(), new Comparator<ArcticTask<?, ?>>() {
-			@Override
-			public int compare(ArcticTask<?, ?> o1, ArcticTask<?, ?> o2) {
-				return o1.getPriority() - o2.getPriority();
-			}
-		});
-		queue.addAll(tasksToComplete);
-
-		while(!queue.isEmpty()) {
-			executorService.execute(queue.poll());
-		}
-
-		executorService.shutdown();
+		if (deploymentId != null) ARCTICLog.setDeployment(deploymentId);
 		try {
-			if (!executorService.awaitTermination(1, TimeUnit.HOURS)) {
-				System.err.println("[IcebergCreator] task executor did not terminate within 1h");
+			if (destroyMode) {
+				tasksToComplete.addAll(sm.getSession(profile).getDestroyInstanceTasks().values());
+				tasksToComplete.addAll(sm.getSession(profile).getDestroyNetworkTasks().values());
+				tasksToComplete.addAll(sm.getSession(profile).getDestroyRouterTasks().values());
+				tasksToComplete.addAll(sm.getSession(profile).getDestroySecurityGroupRuleTasks().values());
+				tasksToComplete.addAll(sm.getSession(profile).getDestroySecurityGroupTasks().values());
+				tasksToComplete.addAll(sm.getSession(profile).getDestroyVolumeTasks().values());
+			} else {
+				tasksToComplete.addAll(sm.getSession(profile).getInstanceTasks().values());
+				tasksToComplete.addAll(sm.getSession(profile).getNetworkTasks().values());
+				tasksToComplete.addAll(sm.getSession(profile).getRouterTasks().values());
+				tasksToComplete.addAll(sm.getSession(profile).getSecurityGroupRuleTasks().values());
+				tasksToComplete.addAll(sm.getSession(profile).getSecurityGroupTasks().values());
+				tasksToComplete.addAll(sm.getSession(profile).getVolumeTasks().values());
 			}
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-		}
 
-		tasksToComplete.clear();
+			PriorityQueue<ArcticTask<?, ?>> queue = new PriorityQueue<ArcticTask<?, ?>>(tasksToComplete.size(), new Comparator<ArcticTask<?, ?>>() {
+				@Override
+				public int compare(ArcticTask<?, ?> o1, ArcticTask<?, ?> o2) {
+					return o1.getPriority() - o2.getPriority();
+				}
+			});
+			queue.addAll(tasksToComplete);
 
-		if (!destroyMode && exercise != null) {
-			ansibleStager.stage(exercise);
-			ansibleStager.pushAndRun(controllerIp, exercise.getName());
+			while(!queue.isEmpty()) {
+				executorService.execute(ARCTICLog.wrap(queue.poll()));
+			}
+
+			executorService.shutdown();
+			try {
+				if (!executorService.awaitTermination(1, TimeUnit.HOURS)) {
+					ARCTICLog.err("IcebergCreator", "task executor did not terminate within 1h");
+				}
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+			}
+
+			tasksToComplete.clear();
+
+			if (!destroyMode && exercise != null) {
+				ansibleStager.stage(exercise);
+				ansibleStager.pushAndRun(controllerIp, exercise.getName());
+			}
+		} finally {
+			if (deploymentId != null) ARCTICLog.clearDeployment();
 		}
 	}
 	

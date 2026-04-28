@@ -18,6 +18,6 @@ import lombok.NoArgsConstructor;
 @JsonIgnoreProperties(ignoreUnknown=true)
 public class RangeCreationDTO {
 	private List<ArcticNetworkDTO> networks = new ArrayList<>();
-	private List<ArcticHostDTO> hosts = new ArrayList<>();
+	private List<HostCollectionDTO> hostCollections = new ArrayList<>();
 	private List<ArcticVolumeDTO> volumes = new ArrayList<>();
 }
